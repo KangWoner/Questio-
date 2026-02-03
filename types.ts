@@ -17,8 +17,8 @@ export interface University {
   type: number;
   scope: string[];
   features: string;
-  preferredStyle: '연산 중심' | '논증 중심'; // 추가: 대학이 선호하는 풀이 스타일
-  tier: UniversityTier; // 추가: 대학의 등급 분류
+  preferredStyle: '연산 중심' | '논증 중심';
+  tier: UniversityTier;
 }
 
 export interface DiagramData {
@@ -39,4 +39,6 @@ export interface AnalysisResult {
   analysisText: string;
   recommendedUniversities: University[];
   detailedReport?: ReportSection[];
+  personaImageUrl?: string;
+  groundingUrls?: { uri: string; title: string }[]; // 추가: 실시간 검색 출처 URL
 }

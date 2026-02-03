@@ -2,9 +2,10 @@
 import React, { useState, useCallback } from 'react';
 import { SurveyData, AnalysisResult, ReportSection, University } from './types';
 import { UNIVERSITIES } from './constants';
-import { generateAnalysis, generateDetailedReport } from './services/geminiService';
+import { generateAnalysis, generateDetailedReport, generatePersonaImage } from './services/geminiService';
 import { saveLead } from './services/leadService';
 import RoadmapViewer from './components/RoadmapViewer';
+import MathText from './components/MathText';
 
 const App: React.FC = () => {
   const [step, setStep] = useState<number>(0);
@@ -48,30 +49,19 @@ const App: React.FC = () => {
     setLoading(true);
     setStep(7);
     try {
-      // 1. 추천 점수 산정 로직 고도화
       const scoredUniversities = UNIVERSITIES.map(univ => {
         let score = 0;
-
-        // [필수 조건] 학습 범위: 충족하지 못하면 합격 가능성이 희박하므로 강력한 페널티
         const hasScopeMatch = univ.scope.every(s => survey.studyScope.includes(s));
         if (hasScopeMatch) score += 100;
-        else score -= 200; // 하단으로 밀어냄
-
-        // [핵심 조건] 티어 매칭: 사용자의 목표 라인과 일치할 때 가점
+        else score -= 200;
         if (univ.tier === survey.tier) score += 60;
-        
-        // [핵심 조건] 스타일 매칭: 연산 vs 논증 스타일이 맞을 때 가점
         if (univ.preferredStyle === survey.solvingStyle) score += 50;
-        else score -= 30; // 스타일이 맞지 않으면 지망 대학이라도 순위를 낮추기 위한 페널티
-
-        // [사용자 선호] 지망 대학 보너스
+        else score -= 30;
         const isTarget = survey.targetUniversities.some(t => t.trim() !== '' && univ.name.includes(t.trim()));
         if (isTarget) score += 40;
-
         return { univ, score };
       });
 
-      // 2. 점수 순으로 정렬 (성향이 안 맞으면 지망 대학도 자연스럽게 4~5위로 밀려남)
       const sortedResult = scoredUniversities
         .sort((a, b) => b.score - a.score)
         .map(item => item.univ);
@@ -95,8 +85,16 @@ const App: React.FC = () => {
     try {
       await saveLead(email, survey);
       if (result) {
-        const fullReport = await generateDetailedReport(survey, result.personaName);
-        setResult({ ...result, detailedReport: fullReport });
+        const [reportData, personaImage] = await Promise.all([
+          generateDetailedReport(survey, result.personaName),
+          generatePersonaImage(survey, result.personaName)
+        ]);
+        setResult({ 
+          ...result, 
+          detailedReport: reportData.sections, 
+          groundingUrls: reportData.groundingUrls,
+          personaImageUrl: personaImage 
+        });
       }
       setSubmitted(true);
       setTimeout(() => setShowRoadmap(true), 500);
@@ -157,7 +155,7 @@ const App: React.FC = () => {
                   <input 
                     type="text" 
                     placeholder={idx === 0 ? "예: 연세대" : "예: 한양대"}
-                    className="w-full p-4 rounded-xl border-2 border-slate-100 focus:border-blue-500 outline-none font-bold"
+                    className="w-full p-4 rounded-xl border-2 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-blue-500 outline-none font-bold shadow-inner"
                     value={survey.targetUniversities[idx]}
                     onChange={(e) => updateTargetUniv(idx, e.target.value)}
                   />
@@ -166,7 +164,7 @@ const App: React.FC = () => {
               <button 
                 onClick={() => setStep(3)} 
                 disabled={!survey.targetUniversities[0].trim()}
-                className="w-full mt-4 bg-slate-900 text-white font-bold py-4 rounded-2xl disabled:opacity-50 transition-all"
+                className="w-full mt-4 bg-slate-900 text-white font-bold py-4 rounded-2xl disabled:opacity-50 transition-all shadow-lg hover:bg-slate-800"
               >
                 다음 단계로 (최소 1지망 필수)
               </button>
@@ -253,11 +251,11 @@ const App: React.FC = () => {
 
   if (result) {
     return (
-      <div className="min-h-screen bg-slate-50 py-10 px-4">
+      <div className="min-h-screen bg-slate-50 py-10 px-4 font-sans">
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-3xl p-10 shadow-xl text-center">
             <h1 className="text-3xl font-extrabold mb-4">당신은 [{result.personaName}]형입니다!</h1>
-            <p className="text-blue-100 italic">"{result.analysisText}"</p>
+            <MathText text={`"${result.analysisText}"`} className="text-blue-100 italic text-lg leading-relaxed block px-4" />
           </div>
 
           <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
@@ -295,14 +293,6 @@ const App: React.FC = () => {
                 );
               })}
             </div>
-            {survey.targetUniversities.some(t => t.trim() !== '' && !result.recommendedUniversities.some(r => r.name.includes(t.trim()))) && (
-               <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100">
-                 <p className="text-xs text-amber-700 font-bold leading-relaxed">
-                   <i className="fa-solid fa-circle-exclamation mr-1"></i>
-                   지망하신 대학 중 일부가 추천 리스트에 보이지 않는 이유는 현재 선택하신 '학습 가능 범위'가 해당 대학의 출제 범위와 일치하지 않기 때문입니다. 범위를 확장하시면 합격 확률을 높일 수 있습니다.
-                 </p>
-               </div>
-            )}
           </div>
 
           <div className="bg-slate-900 rounded-3xl p-10 text-white relative overflow-hidden">
